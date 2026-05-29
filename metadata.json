@@ -1,0 +1,6 @@
+{
+  "name": "KaiOS App Registry Portal",
+  "description": "An advanced deployer, parser, and registry manager for KaiOS applications, supporting packaged OmniSD zips, hosted manifests, direct installation helpers, and GitHub store syncing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
