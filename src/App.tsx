@@ -140,8 +140,7 @@ export default function App() {
   const [hostedIconUrl, setHostedIconUrl] = useState<string>('');
 
   // Installer helper state
-  const [installType, setInstallType] = useState<'hosted' | 'packaged'>('packaged');
-  const [installUrlInput, setInstallUrlInput] = useState<string>('');
+
 
   // Registry Management State
   const [registryApps, setRegistryApps] = useState<RegistryApp[]>([]);
@@ -157,7 +156,7 @@ export default function App() {
   }>({ status: 'idle', message: '', progress: 0 });
 
   // On-Device simulation check
-  const [detectorMozApps, setDetectorMozApps] = useState<boolean>(false);
+
 
   // Trigger scroll to logs
   useEffect(() => {
@@ -197,10 +196,6 @@ export default function App() {
 
   // Check mozApps API support
   useEffect(() => {
-    // navigator.mozApps check
-    if (typeof navigator !== 'undefined' && 'mozApps' in navigator) {
-      setDetectorMozApps(true);
-    }
     addLog('System initialized. Ready for KaiOS app packing and deployment.', 'info');
   }, []);
 
@@ -924,57 +919,6 @@ export default function App() {
     });
   };
 
-  // mozApps Install API Launcher
-  const installAppToDevice = async () => {
-    const url = installUrlInput.trim();
-    if (!url) {
-      showAlert('Define an app manifest installation URL first.', 'info', 'Missing URL');
-      return;
-    }
-
-    const nav = navigator as any;
-    if (!nav.mozApps) {
-      showAlert('On-device Installation interface (navigator.mozApps API) cannot be detected in this browser context.\nTo trigger installations, run this portal inside a KaiOS device browser or desktop emulator.', 'info', 'Interface Missing');
-      return;
-    }
-
-    try {
-      addLog(`Deploying installation command to simulator/hardware. Triggering mozApps api...`, 'info');
-      
-      if (installType === 'hosted') {
-        const req = nav.mozApps.install(url);
-        req.onsuccess = () => {
-          addLog('Installation request triggered successfully!', 'success');
-          showAlert('KaiOS hosted app installation request sent!', 'success', 'Install Initiated');
-        };
-        req.onerror = function(this: any) {
-          const detail = this.error ? this.error.name : 'Unknown Code';
-          addLog(`Hosted install error returned: ${detail}`, 'error');
-          showAlert(`Installation Failed: ${detail}`, 'error', 'Install Error');
-        };
-      } else {
-        // Packaged apps use installPackage
-        if (typeof nav.mozApps.installPackage !== 'function') {
-          throw new Error('This KaiOS system version does not support developer "installPackage" API triggers.');
-        }
-        
-        const req = nav.mozApps.installPackage(url);
-        req.onsuccess = () => {
-          addLog('Packaged ZIP installation launched!', 'success');
-          showAlert('KaiOS Packaged app upload initiated!', 'success', 'Install Initiated');
-        };
-        req.onerror = function(this: any) {
-          const detail = this.error ? this.error.name : 'Unknown Code';
-          addLog(`Packaged installer error returned: ${detail}`, 'error');
-          showAlert(`Installation Failed: ${detail}`, 'error', 'Install Error');
-        };
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      addLog(`Local installation system crash: ${msg}`, 'error');
-      showAlert(`System Error: ${msg}`, 'error', 'Install Crash');
-    }
-  };
 
   // Keyboard Navigation simulation for accessibility
   const handleKeyNavigationInfo = () => {
@@ -1088,18 +1032,7 @@ export default function App() {
               <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               Manage Registry
             </button>
-            <button
-              id="tab-btn-installer"
-              onClick={() => setActiveTab('installer')}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg transition duration-200 cursor-pointer whitespace-nowrap ${
-                activeTab === 'installer'
-                  ? 'bg-orange-600 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              On-Device Installer
-            </button>
+
             <button
               id="tab-btn-settings"
               onClick={() => setActiveTab('settings')}
@@ -1620,118 +1553,6 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB: On-Device Installation Wizard */}
-            {activeTab === 'installer' && (
-              <div id="panel-installer" className="space-y-6 animate-fadeIn">
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Smartphone className="text-orange-500 w-5 h-5" />
-                    On-Device Developer Installer Helper
-                  </h2>
-                  <p className="text-slate-400 text-sm mt-1">
-                    Directly install applications onto plugged-in KaiOS mobile terminals or testing emulators utilizing standard desktop/handset mozApps developer links.
-                  </p>
-                </div>
-
-                {/* Compatibility report alerts */}
-                {detectorMozApps ? (
-                  <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-900/40 text-emerald-400 text-sm flex gap-3 items-start">
-                    <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-emerald-200">Device API Active!</p>
-                      <p className="text-xs text-emerald-400/90 mt-0.5">
-                        The installer has successfully detected the <code>navigator.mozApps</code> developer interface inside this browser environment. You can click to trigger live deployments.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 text-xs leading-relaxed space-y-1">
-                    <div className="font-semibold text-slate-200 flex items-center gap-1.5">
-                      <Info className="w-4 h-4 text-orange-400" />
-                      Installation Interface Notice
-                    </div>
-                    <p>
-                      The on-screen KaiOS browser direct deployment utility requires active WebAPI hooks (<code>navigator.mozApps</code>). Since you are running in a desktop browser container preview, this interface is simulation-only.
-                    </p>
-                    <p className="pt-1 text-slate-500 font-medium">To establish developer ties and test directly:</p>
-                    <ul className="list-disc list-inside space-y-0.5 pl-2 text-slate-500 font-mono">
-                      <li>Open this applet inside your actual banana handset browser</li>
-                      <li>Or connect your phone via WebIDE using developer root access tools</li>
-                    </ul>
-                  </div>
-                )}
-
-                {/* Custom install interface */}
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-                  <div className="flex gap-4 border-b border-slate-900 pb-4">
-                    <label className="flex items-center gap-2 text-xs text-slate-300 font-bold select-none cursor-pointer">
-                      <input
-                        type="radio"
-                        name="install-type-radio"
-                        checked={installType === 'packaged'}
-                        onChange={() => setInstallType('packaged')}
-                        className="w-4 h-4 accent-orange-500 cursor-pointer"
-                      />
-                      Packaged ZIP (installPackage)
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-slate-300 font-bold select-none cursor-pointer">
-                      <input
-                        type="radio"
-                        name="install-type-radio"
-                        checked={installType === 'hosted'}
-                        onChange={() => setInstallType('hosted')}
-                        className="w-4 h-4 accent-orange-500 cursor-pointer"
-                      />
-                      Hosted App (install)
-                    </label>
-                  </div>
-
-                  <div className="space-y-3">
-                    <label className="text-xs font-semibold text-slate-400 block">
-                      {installType === 'packaged' ? 'Installer Mini-Manifest URI (Githack or hosted webapp)' : 'Hosted Application Manifest URL'}
-                    </label>
-                    
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="url"
-                        placeholder={installType === 'packaged' ? 'https://raw.githack.com/Owner/Repo/main/manifests/myapp.webapp' : 'https://example.com/manifest.webapp'}
-                        value={installUrlInput}
-                        onChange={(e) => setInstallUrlInput(e.target.value)}
-                        className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-orange-500"
-                      />
-                      <button
-                        onClick={installAppToDevice}
-                        className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm select-none transition cursor-pointer shrink-0"
-                      >
-                        Push Install Command
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* FAQ section */}
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1">
-                    <Cpu className="text-orange-400 w-4 h-4" />
-                    Developer Guide: Connecting banana phones
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-400">
-                    <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl space-y-1.5">
-                      <div className="font-semibold text-slate-300">1. Open Debugging Port</div>
-                      <p className="leading-relaxed">
-                        Dial <strong>*#*#33284#*#*</strong> on your phone. A bug icon should appear in the status bar at the top, signifying debugger ADB port status has been toggled active.
-                      </p>
-                    </div>
-                    <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl space-y-1.5">
-                      <div className="font-semibold text-slate-300">2. Run WebIDE Simulator</div>
-                      <p className="leading-relaxed">
-                        Connect via USB to a computer running Pale Moon browser or old Firefox 52 ESR alongside diagnostic tools to run direct terminal side-loads easily.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* TAB: settings credentials */}
             {activeTab === 'settings' && (
