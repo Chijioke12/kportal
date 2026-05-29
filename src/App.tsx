@@ -56,6 +56,7 @@ interface AppMetadata {
   iconBlob?: Blob;
   iconName?: string;
   iconUrl?: string;
+  category?: string;
 }
 
 // Registry app format in apps.json
@@ -69,7 +70,22 @@ interface RegistryApp {
   manifest_url?: string;
   download_url?: string;
   version?: string;
+  category?: string;
 }
+
+const APP_CATEGORIES = [
+  'Social',
+  'Games',
+  'Utilities',
+  'News',
+  'Lifestyle',
+  'Entertainment',
+  'Health',
+  'Sports',
+  'Books',
+  'Education',
+  'Shopping'
+];
 
 export default function App() {
   // Custom non-blocking modal alert & confirm state
@@ -147,6 +163,8 @@ export default function App() {
   const [loadingRegistry, setLoadingRegistry] = useState<boolean>(false);
   const [deleteFiles, setDeleteFiles] = useState<boolean>(true);
   const [registrySearch, setRegistrySearch] = useState<string>('');
+  const [registryCategoryFilter, setRegistryCategoryFilter] = useState<string>('All');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Utilities');
 
   // Global operations
   const [operationState, setOperationState] = useState<{
@@ -662,7 +680,8 @@ export default function App() {
         type: 'packaged',
         manifest_url: manifestInstallUrl,
         download_url: `https://raw.githubusercontent.com/${cleanRepo}/main/${zipPath}`,
-        version: packagedMeta.version
+        version: packagedMeta.version,
+        category: selectedCategory
       };
 
       const existingIndex = appsList.findIndex(a => a && a.id === appId);
@@ -733,7 +752,8 @@ export default function App() {
         icon: hostedIconUrl || '',
         type: 'hosted',
         manifest_url: hostedMeta.manifest_url,
-        version: hostedMeta.version
+        version: hostedMeta.version,
+        category: selectedCategory
       };
 
       const existingIndex = appsList.findIndex(a => a && a.id === appId);
@@ -928,13 +948,16 @@ export default function App() {
   // Filter registry list
   const filteredAppsList = registryApps.filter(app => {
     const search = registrySearch.toLowerCase().trim();
-    if (!search) return true;
-    return (
+    const matchesSearch = !search || (
       app.name?.toLowerCase().includes(search) || 
       app.author?.toLowerCase().includes(search) || 
       app.description?.toLowerCase().includes(search) ||
       app.id?.toLowerCase().includes(search)
     );
+    
+    const matchesCategory = registryCategoryFilter === 'All' || app.category === registryCategoryFilter;
+    
+    return matchesSearch && matchesCategory;
   });
 
   return (
@@ -1176,6 +1199,28 @@ export default function App() {
                           </span>
                         </div>
 
+                        {/* Category selection */}
+                        <div className="pt-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 px-1">
+                            Store Category Placement
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {APP_CATEGORIES.map(cat => (
+                              <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                                  selectedCategory === cat
+                                    ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/20'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
                         {(() => {
                           const statusInfo = getUpdateStatusAndBadge(packagedMeta.name, packagedMeta.version);
                           return (
@@ -1332,6 +1377,28 @@ export default function App() {
                           </span>
                         </div>
 
+                        {/* Category selection */}
+                        <div className="pt-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 px-1">
+                            Store Category Placement
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {APP_CATEGORIES.map(cat => (
+                              <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                                  selectedCategory === cat
+                                    ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/20'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
                         {(() => {
                           const statusInfo = getUpdateStatusAndBadge(hostedMeta.name, hostedMeta.version);
                           return (
@@ -1425,6 +1492,20 @@ export default function App() {
                     />
                   </div>
                   
+                  <div className="flex items-center gap-2 max-w-full">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 whitespace-nowrap">Category:</span>
+                    <select
+                      value={registryCategoryFilter}
+                      onChange={(e) => setRegistryCategoryFilter(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
+                    >
+                      <option value="All">All Categories</option>
+                      {APP_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
                   {/* Cleanup toggle check */}
                   <label className="flex items-center gap-3 shrink-0 select-none cursor-pointer w-full sm:w-auto p-2 sm:p-0 rounded-lg bg-slate-900 sm:bg-transparent border border-slate-800 sm:border-none">
                     <input
@@ -1496,6 +1577,11 @@ export default function App() {
                               {app.version && (
                                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
                                   v{app.version}
+                                </span>
+                              )}
+                              {app.category && (
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-950/40 border border-blue-900/40 text-blue-400">
+                                  {app.category}
                                 </span>
                               )}
                             </div>
