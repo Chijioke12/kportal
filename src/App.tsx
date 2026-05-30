@@ -57,6 +57,8 @@ interface AppMetadata {
   iconName?: string;
   iconUrl?: string;
   category?: string;
+  size?: string;
+  size_raw?: number;
 }
 
 // Registry app format in apps.json
@@ -71,6 +73,8 @@ interface RegistryApp {
   download_url?: string;
   version?: string;
   category?: string;
+  size?: string;
+  size_raw?: number;
 }
 
 const APP_CATEGORIES = [
@@ -139,7 +143,7 @@ export default function App() {
   const [ghError, setGhError] = useState<string>('');
 
   // Tab navigation
-  const [activeTab, setActiveTab] = useState<'packaged' | 'hosted' | 'manage' | 'installer' | 'settings'>('packaged');
+  const [activeTab, setActiveTab] = useState<'packaged' | 'hosted' | 'manage' | 'settings' | 'wrapper'>('packaged');
 
   // Logs
   const [logs, setLogs] = useState<RegistryLog[]>([]);
@@ -154,6 +158,17 @@ export default function App() {
   const [hostedUrlInput, setHostedUrlInput] = useState<string>('');
   const [hostedMeta, setHostedMeta] = useState<AppMetadata | null>(null);
   const [hostedIconUrl, setHostedIconUrl] = useState<string>('');
+
+  // Web Wrapper app state
+  const [wrapperUrl, setWrapperUrl] = useState<string>('');
+  const [wrapperName, setWrapperName] = useState<string>('');
+  const [wrapperDescription, setWrapperDescription] = useState<string>('');
+  const [wrapperAuthor, setWrapperAuthor] = useState<string>('');
+  const [wrapperVersion, setWrapperVersion] = useState<string>('1.0.0');
+  const [wrapperCategory, setWrapperCategory] = useState<string>('Utilities');
+  const [wrapperGeneratedIconBlob, setWrapperGeneratedIconBlob] = useState<Blob | null>(null);
+  const [wrapperGeneratedIconUrl, setWrapperGeneratedIconUrl] = useState<string>('');
+  const [isFetchingIcon, setIsFetchingIcon] = useState<boolean>(false);
 
   // Installer helper state
 
@@ -223,6 +238,16 @@ export default function App() {
     localStorage.setItem('gh-repo', repo.trim());
     addLog(`GitHub configuration updated: Repository configured as "${repo.trim()}"`, 'success');
     validateGitHub();
+  };
+
+  // Helper to format bytes to human readable sizes
+  const formatBytes = (bytes: number, decimals: number = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
@@ -362,7 +387,9 @@ export default function App() {
         author: author,
         version: manifest.version || '1.0.0',
         icons: manifest.icons,
-        type: 'packaged'
+        type: 'packaged',
+        size: formatBytes(file.size),
+        size_raw: file.size
       };
 
       // Extract the highest-res icon
@@ -681,7 +708,9 @@ export default function App() {
         manifest_url: manifestInstallUrl,
         download_url: `https://raw.githubusercontent.com/${cleanRepo}/main/${zipPath}`,
         version: packagedMeta.version,
-        category: selectedCategory
+        category: selectedCategory,
+        size: packagedMeta.size,
+        size_raw: packagedMeta.size_raw
       };
 
       const existingIndex = appsList.findIndex(a => a && a.id === appId);
@@ -753,7 +782,9 @@ export default function App() {
         type: 'hosted',
         manifest_url: hostedMeta.manifest_url,
         version: hostedMeta.version,
-        category: selectedCategory
+        category: selectedCategory,
+        size: 'Hosted',
+        size_raw: 0
       };
 
       const existingIndex = appsList.findIndex(a => a && a.id === appId);
@@ -789,6 +820,335 @@ export default function App() {
       addLog(`Deployment exception: ${msg}`, 'error');
     }
   };
+
+  // Generate a stylish letter avatar on HTML5 Canvas
+  const generateLetterAvatar = (name: string) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Choose background color based on name length to give a sense of unique branding
+      const colors = [
+        ['#f97316', '#ea580c'], // Orange gradient
+        ['#3b82f6', '#2563eb'], // Blue gradient
+        ['#06b6d4', '#0891b2'], // Cyan gradient
+        ['#10b981', '#059669'], // Emerald gradient
+        ['#8b5cf6', '#7c3aed'], // Violet gradient
+        ['#ec4899', '#db2777'], // Pink gradient
+      ];
+      const colorScheme = colors[name.length % colors.length];
+
+      // Draw shiny background gradient
+      const gradient = ctx.createLinearGradient(0, 0, 128, 128);
+      gradient.addColorStop(0, colorScheme[0]);
+      gradient.addColorStop(1, colorScheme[1]);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 128, 128);
+
+      // Draw subtle decorative overlay ring
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(64, 64, 52, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw stylish display letter
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 56px "Space Grotesk", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const letter = (name || 'W').trim().charAt(0).toUpperCase();
+      ctx.fillText(letter, 64, 65);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          setWrapperGeneratedIconBlob(blob);
+          if (wrapperGeneratedIconUrl) {
+            URL.revokeObjectURL(wrapperGeneratedIconUrl);
+          }
+          setWrapperGeneratedIconUrl(URL.createObjectURL(blob));
+          addLog(`Generated letter avatar launcher icon for "${name}"`, 'info');
+        }
+      }, 'image/png');
+    }
+  };
+
+  // Extract hostname & fetch high-res favicon from Google Favicon API (safe proxy)
+  const handleFetchWebsiteIcon = async () => {
+    let url = wrapperUrl.trim();
+    if (!url) {
+      showAlert('Enter a target website URL first.', 'info', 'Missing URL');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+      setWrapperUrl(url);
+    }
+
+    setIsFetchingIcon(true);
+    addLog(`Attempting to fetch host favicon for "${url}"...`, 'info');
+
+    try {
+      const parsedUrl = new URL(url);
+      const domain = parsedUrl.hostname;
+      
+      // We seek 128x128 pixels sizing from Google favicon API
+      const faviconUrl = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+      
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = faviconUrl;
+      
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Image fetch failed'));
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Draw elegant circular container background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Draw image keeping proportional scale centered
+        ctx.drawImage(img, 12, 12, 104, 104);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            setWrapperGeneratedIconBlob(blob);
+            if (wrapperGeneratedIconUrl) {
+              URL.revokeObjectURL(wrapperGeneratedIconUrl);
+            }
+            setWrapperGeneratedIconUrl(URL.createObjectURL(blob));
+            addLog(`Successfully resolved and formatted icon for ${domain}!`, 'success');
+          }
+          setIsFetchingIcon(false);
+        }, 'image/png');
+      } else {
+        throw new Error('Canvas rendering mismatch');
+      }
+    } catch (e) {
+      addLog('Favicon resolution encountered an error. Falling back to dynamic color letter-branding.', 'error');
+      generateLetterAvatar(wrapperName || new URL(url).hostname || 'W');
+      setIsFetchingIcon(false);
+    }
+  };
+
+  // Generate & Submit Web-Wrapper application to GitHub connected store
+  const handleDeployWrapperApp = async () => {
+    if (!token.trim() || !repo.trim()) {
+      showAlert('GitHub connection settings are incomplete. Set credentials in Settings first.', 'error', 'Configuration Incomplete');
+      setActiveTab('settings');
+      return;
+    }
+
+    let url = wrapperUrl.trim();
+    if (!url) {
+      showAlert('Please specify a target website URL.', 'info', 'Missing URL');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+      setWrapperUrl(url);
+    }
+
+    const appName = wrapperName.trim();
+    if (!appName) {
+      showAlert('Please enter an Application Name.', 'info', 'Missing Name');
+      return;
+    }
+
+    let iconBlob = wrapperGeneratedIconBlob;
+    if (!iconBlob) {
+      // Generate one on the fly if still missing or not loaded
+      addLog('Autobuilding launcher icon canvas...', 'info');
+      generateLetterAvatar(appName);
+      showAlert('Constructed a stylish brand logo in-browser! Click deploy again to commit.', 'info', 'Icon Generated');
+      return;
+    }
+
+    setOperationState({ status: 'running', message: 'Creating wrapper application packages...', progress: 15 });
+    addLog(`Initiating packing for Web Wrapper app: "${appName}"`, 'info');
+
+    try {
+      const cleanRepo = repo.trim();
+      const cleanToken = token.trim();
+      const appId = appName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').toLowerCase();
+
+      // 1. Build inside package application.zip
+      setOperationState(prev => ({ ...prev, message: 'Creating inner application.zip structure...', progress: 30 }));
+      
+      const manifestObj = {
+        name: appName,
+        description: wrapperDescription.trim() || `Companion app wrapper for ${appName}.`,
+        version: wrapperVersion.trim() || '1.0.0',
+        start_url: url,
+        type: 'privileged',
+        icons: {
+          '128': '/icon128.png'
+        },
+        developer: {
+          name: wrapperAuthor.trim() || 'KaiOS Web App Wrapper Builder',
+          url: url
+        },
+        permissions: {
+          'browser': {
+            'description': 'Required to browse other frames or resolve web redirects.'
+          }
+        }
+      };
+
+      const innerZip = new JSZip();
+      innerZip.file('manifest.webapp', JSON.stringify(manifestObj, null, 2));
+      innerZip.file('manifest.json', JSON.stringify(manifestObj, null, 2));
+      innerZip.file('manifest.webmanifest', JSON.stringify(manifestObj, null, 2));
+      innerZip.file('icon128.png', iconBlob);
+      const innerZipBlob = await innerZip.generateAsync({ type: 'blob' });
+
+      // 2. Build OmniSD compatible outer installing ZIP package
+      setOperationState(prev => ({ ...prev, message: 'Formulating outer OmniSD ZIP bundle...', progress: 50 }));
+
+      const updateManifestObj = {
+        name: appName,
+        package_path: 'application.zip',
+        version: wrapperVersion.trim() || '1.0.0',
+        developer: {
+          name: wrapperAuthor.trim() || 'KaiOS Web App Wrapper Builder',
+          url: url
+        },
+        icons: {
+          '128': '/icon128.png'
+        }
+      };
+
+      const metadataObj = {
+        version: 1,
+        manifestURL: `app://${appId}/manifest.webapp`
+      };
+
+      const outerZip = new JSZip();
+      outerZip.file('application.zip', innerZipBlob);
+      outerZip.file('update.webapp', JSON.stringify(updateManifestObj, null, 2));
+      outerZip.file('metadata.json', JSON.stringify(metadataObj, null, 2));
+      const outerZipBlob = await outerZip.generateAsync({ type: 'blob' });
+
+      // 3. Stage and Upload files to GitHub commits
+      setOperationState(prev => ({ ...prev, message: 'Staging web-app bundle on GitHub...', progress: 75 }));
+      
+      const filesForCommit: { path: string; sha: string }[] = [];
+      
+      const zipBase64 = await toBase64(new File([outerZipBlob], `${appId}.zip`));
+      const zipPath = `apps/${appId}.zip`;
+      
+      addLog(`Creating ZIP artifact blob at "${zipPath}"...`, 'info');
+      const zipSha = await createGitBlob(cleanRepo, cleanToken, zipBase64);
+      filesForCommit.push({ path: zipPath, sha: zipSha });
+
+      // Save icon for store UI representation
+      let iconUrl = '';
+      setOperationState(prev => ({ ...prev, message: 'Staging gallery graphics...', progress: 85 }));
+      const iconBase64 = await toBase64(iconBlob);
+      const iconPath = `icons/${appId}-icon-128.png`;
+      
+      addLog(`Creating gallery icon blob at "${iconPath}"...`, 'info');
+      const iconSha = await createGitBlob(cleanRepo, cleanToken, iconBase64);
+      filesForCommit.push({ path: iconPath, sha: iconSha });
+      iconUrl = `https://raw.githubusercontent.com/${cleanRepo}/main/${iconPath}`;
+
+      // mini-manifest
+      const miniManifest = {
+        name: appName,
+        package_path: `https://raw.githubusercontent.com/${cleanRepo}/main/${zipPath}`,
+        version: wrapperVersion.trim() || '1.0.0',
+        developer: {
+          name: wrapperAuthor.trim() || 'Creator'
+        }
+      };
+
+      const miniManifestContent = JSON.stringify(miniManifest, null, 2);
+      const manifestBase64 = "data:application/json;base64," + safeEncodeUnicode(miniManifestContent);
+      const manifestPath = `manifests/${appId}.webapp`;
+
+      addLog(`Creating mini-manifest at "${manifestPath}"...`, 'info');
+      const manifestSha = await createGitBlob(cleanRepo, cleanToken, manifestBase64);
+      filesForCommit.push({ path: manifestPath, sha: manifestSha });
+
+      const manifestInstallUrl = getGithackManifestUrl(cleanRepo, appId);
+
+      // Append registry record to apps.json database
+      addLog('Loading registry apps.json index from Remote...', 'info');
+      const appsList = await fetchAppsJson(cleanRepo, cleanToken);
+      
+      const updatedRegistryEntry: RegistryApp = {
+        id: appId,
+        name: appName,
+        author: wrapperAuthor.trim() || 'Creator',
+        description: wrapperDescription.trim() || `Companion app wrapper for ${appName}.`,
+        icon: iconUrl,
+        type: 'packaged',
+        manifest_url: manifestInstallUrl,
+        download_url: `https://raw.githubusercontent.com/${cleanRepo}/main/${zipPath}`,
+        version: wrapperVersion.trim() || '1.0.0',
+        category: wrapperCategory,
+        size: formatBytes(outerZipBlob.size),
+        size_raw: outerZipBlob.size
+      };
+
+      const existingIndex = appsList.findIndex(a => a && a.id === appId);
+      if (existingIndex > -1) {
+        appsList[existingIndex] = updatedRegistryEntry;
+        addLog(`Item "${appId}" already registered. Replacing older database reference.`, 'info');
+      } else {
+        appsList.push(updatedRegistryEntry);
+        addLog(`Adding fresh listing entry "${appId}" to store.`, 'info');
+      }
+
+      const rawRegistryText = JSON.stringify({ apps: appsList }, null, 2);
+      const registryBase64 = "data:application/json;base64," + safeEncodeUnicode(rawRegistryText);
+      const registrySha = await createGitBlob(cleanRepo, cleanToken, registryBase64);
+      filesForCommit.push({ path: 'apps.json', sha: registrySha });
+
+      // Run atomic repository commit package
+      setOperationState(prev => ({ ...prev, message: 'Publishing git repositories package...', progress: 95 }));
+      await atomicGitCommit(cleanRepo, cleanToken, 'main', `Deploy Web-Wrapper app: ${appName} v${wrapperVersion}`, filesForCommit);
+
+      setOperationState({ status: 'success', message: 'Deployment complete!', progress: 100 });
+      addLog(`Victory! Dynamic Web App wrapper for "${appName}" published and submitted successfully!`, 'success');
+      showAlert(`Success! Website turned into KaiOS app and submitted to Store.`, 'success', 'Deploy Successful');
+
+      // Refresh management
+      fetchAppsRegistry();
+      
+      // Clear wizard inputs
+      setWrapperUrl('');
+      setWrapperName('');
+      setWrapperDescription('');
+      setWrapperAuthor('');
+      setWrapperVersion('1.0.0');
+      setWrapperGeneratedIconBlob(null);
+      setWrapperGeneratedIconUrl('');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Publish processes failed';
+      setOperationState({ status: 'error', message: `Deployment Failed: ${msg}`, progress: 100 });
+      addLog(`Deployment exception: ${msg}`, 'error');
+    }
+  };
+
+  // Synchronize wrapper name with a generated letter avatar if they don't have one fetched yet
+  useEffect(() => {
+    if (activeTab === 'wrapper' && wrapperName.trim() && !wrapperGeneratedIconBlob && !isFetchingIcon) {
+      const delayDebounceFn = setTimeout(() => {
+        generateLetterAvatar(wrapperName);
+      }, 600);
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [wrapperName, activeTab]);
 
   // Fetch registry list for management tab
   const fetchAppsRegistry = async () => {
@@ -1041,6 +1401,18 @@ export default function App() {
               Hosted App (Manifest)
             </button>
             <button
+              id="tab-btn-wrapper"
+              onClick={() => setActiveTab('wrapper')}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg transition duration-200 cursor-pointer whitespace-nowrap ${
+                activeTab === 'wrapper'
+                  ? 'bg-orange-600 text-white font-semibold'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              Website to App
+            </button>
+            <button
               id="tab-btn-manage"
               onClick={() => {
                 setActiveTab('manage');
@@ -1194,6 +1566,11 @@ export default function App() {
                           <span className="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-800">
                             Version: <span className="text-slate-200">{packagedMeta.version}</span>
                           </span>
+                          {packagedMeta.size && (
+                            <span className="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-800">
+                              Size: <span className="text-slate-200">{packagedMeta.size}</span>
+                            </span>
+                          )}
                           <span className="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-800">
                             Format: <span className="text-slate-200">Packaged (.zip)</span>
                           </span>
@@ -1373,6 +1750,9 @@ export default function App() {
                             Version: <span className="text-slate-200">{hostedMeta.version}</span>
                           </span>
                           <span className="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-800">
+                            Size: <span className="text-slate-200">Hosted</span>
+                          </span>
+                          <span className="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-800">
                             Format: <span className="text-slate-200">Hosted Application</span>
                           </span>
                         </div>
@@ -1452,6 +1832,240 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB: Website to App Wrapper Creator */}
+            {activeTab === 'wrapper' && (
+              <div id="panel-wrapper" className="space-y-6 animate-fadeIn">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Smartphone className="text-orange-500 w-5 h-5 animate-pulse" />
+                    Website to App Packager
+                  </h2>
+                  <p className="text-slate-400 text-sm mt-1">
+                    Instantly wrap any public website into a native packaged application, complete with launch configurations, automatic high-res icon extraction, and automated OmniSD store compilation.
+                  </p>
+                </div>
+
+                {/* Form Wrapper Panel */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                  {/* Left Column inputs (7 cols) */}
+                  <div className="md:col-span-8 space-y-4">
+                    {/* Website URL */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300 block">Website URL</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          placeholder="https://news.ycombinator.com"
+                          value={wrapperUrl}
+                          onChange={(e) => {
+                            setWrapperUrl(e.target.value);
+                          }}
+                          className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-200 focus:outline-none focus:border-orange-500"
+                        />
+                        <button
+                          onClick={handleFetchWebsiteIcon}
+                          disabled={isFetchingIcon}
+                          className="px-4 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-50 h-full cursor-pointer shrink-0"
+                          title="Extract the high-res favicon from this website"
+                        >
+                          {isFetchingIcon ? (
+                            <Loader className="w-3.5 h-3.5 animate-spin text-orange-500" />
+                          ) : (
+                            <Globe className="w-3.5 h-3.5 text-orange-400" />
+                          )}
+                          Fetch Icon
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-slate-500 block">
+                        We will pull the high-resolution site branding or construct a gorgeous letter banner matching your choice.
+                      </span>
+                    </div>
+
+                    {/* App Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300 block">Application Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Hacker News"
+                        value={wrapperName}
+                        onChange={(e) => {
+                          setWrapperName(e.target.value);
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 font-medium"
+                      />
+                    </div>
+
+                    {/* Category Selection */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300 block">App Store Category</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {APP_CATEGORIES.map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setWrapperCategory(cat)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              wrapperCategory === cat
+                                ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-950/20'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-300 hover:border-slate-700 cursor-pointer'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Developer Name & Version */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-300 block">Author Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Web Master"
+                          value={wrapperAuthor}
+                          onChange={(e) => setWrapperAuthor(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-300 block">App Version</label>
+                        <input
+                          type="text"
+                          placeholder="1.0.0"
+                          value={wrapperVersion}
+                          onChange={(e) => setWrapperVersion(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300 block">Description / Slogan</label>
+                      <textarea
+                        placeholder="e.g. A fast, light microapp launcher to read stories comfortably style."
+                        value={wrapperDescription}
+                        onChange={(e) => setWrapperDescription(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 h-20 resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Right Column App Icon Live Rendering & Actions (4 cols) */}
+                  <div className="md:col-span-4 flex flex-col items-center justify-start space-y-4 bg-slate-950/60 border border-slate-800 rounded-xl p-5">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
+                      Launcher Icon Preview
+                    </span>
+
+                    {/* Launcher Icon Display */}
+                    <div className="relative w-28 h-28 flex items-center justify-center rounded-2xl bg-slate-900 border border-slate-800 shadow-xl overflow-hidden group">
+                      {wrapperGeneratedIconUrl ? (
+                        <img
+                          src={wrapperGeneratedIconUrl}
+                          alt="Launcher icon preview"
+                          className="w-full h-full object-cover rounded-2xl p-1"
+                        />
+                      ) : (
+                        <div className="text-center p-3">
+                          <SmartphoneNfc className="w-10 h-10 mx-auto text-slate-700 animate-pulse" />
+                          <span className="text-[10px] text-slate-600 font-mono block mt-1">Ready</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions on Icon */}
+                    <div className="w-full space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => generateLetterAvatar(wrapperName || 'Web App')}
+                        className="w-full py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="Generate circular letter branding"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
+                        Re-generate Monogram
+                      </button>
+
+                      {/* Custom Icon upload */}
+                      <label className="w-full py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              const file = e.target.files[0];
+                              setWrapperGeneratedIconBlob(file);
+                              if (wrapperGeneratedIconUrl) {
+                                URL.revokeObjectURL(wrapperGeneratedIconUrl);
+                              }
+                              setWrapperGeneratedIconUrl(URL.createObjectURL(file));
+                              addLog(`Imported manual user launcher icon: ${file.name}`, 'success');
+                            }
+                          }}
+                        />
+                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                        Upload Custom Logo
+                      </label>
+                    </div>
+
+                    {/* Specs Summary card */}
+                    <div className="w-full bg-slate-950/80 border border-slate-900 rounded-lg p-3 text-[11px] text-slate-400 space-y-1 font-mono">
+                      <div className="text-slate-500 font-bold uppercase text-[9px] mb-1">Package Specs:</div>
+                      <div className="truncate">Url: <span className="text-slate-300">{wrapperUrl || 'None'}</span></div>
+                      <div>Type: <span className="text-blue-400 font-semibold">Web Wrapper</span></div>
+                      <div>Format: <span className="text-purple-400 font-semibold">OmniSD Package</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submitting Actions */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-5">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                        <Cpu className="text-orange-400 w-4 h-4" />
+                        OmniSD Store Submission Requirements
+                      </h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        This wizard compiles the target website, creates standard metadata parameters, bundles everything into an industry-standard application.zip container, and stages it on GitHub as a registry index inside your <code>apps.json</code> list.
+                      </p>
+                    </div>
+
+                    <button
+                      id="wrapper-deploy-btn"
+                      onClick={handleDeployWrapperApp}
+                      disabled={operationState.status === 'running' || !ghStatus}
+                      className={`w-full sm:w-auto px-6 py-3.5 rounded-xl text-white font-bold transition flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
+                        operationState.status === 'running'
+                          ? 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
+                          : ghStatus === 'valid'
+                          ? 'bg-orange-600 hover:bg-orange-500 active:scale-95 shadow-lg shadow-orange-950/20'
+                          : 'bg-slate-800 border border-slate-700 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {operationState.status === 'running' ? (
+                        <>
+                          <Loader className="w-5 h-5 animate-spin text-orange-500" />
+                          <span>Deploying Wrapper...</span>
+                        </>
+                      ) : ghStatus === 'valid' ? (
+                        <>
+                          <CheckCircle className="w-5 h-5 text-emerald-400" />
+                          <span>Convert to App & Store</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-5 h-5 text-red-500" />
+                          <span>Validate GitHub to Deploy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1577,6 +2191,11 @@ export default function App() {
                               {app.version && (
                                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
                                   v{app.version}
+                                </span>
+                              )}
+                              {app.size && (
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-500">
+                                  {app.size}
                                 </span>
                               )}
                               {app.category && (
