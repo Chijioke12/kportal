@@ -169,6 +169,9 @@ export default function App() {
   const [wrapperGeneratedIconBlob, setWrapperGeneratedIconBlob] = useState<Blob | null>(null);
   const [wrapperGeneratedIconUrl, setWrapperGeneratedIconUrl] = useState<string>('');
   const [isFetchingIcon, setIsFetchingIcon] = useState<boolean>(false);
+  const [wrapperFullscreen, setWrapperFullscreen] = useState<boolean>(true);
+  const [wrapperUseCursor, setWrapperUseCursor] = useState<boolean>(true);
+  const [wrapperType, setWrapperType] = useState<'web' | 'privileged'>('privileged');
 
   // Installer helper state
 
@@ -839,12 +842,17 @@ export default function App() {
       ];
       const colorScheme = colors[name.length % colors.length];
 
-      // Draw shiny background gradient
+      // Draw shiny background gradient as a round circle
       const gradient = ctx.createLinearGradient(0, 0, 128, 128);
       gradient.addColorStop(0, colorScheme[0]);
       gradient.addColorStop(1, colorScheme[1]);
+      
+      ctx.clearRect(0, 0, 128, 128);
+      ctx.beginPath();
+      ctx.arc(64, 64, 62, 0, Math.PI * 2);
+      ctx.closePath();
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 128, 128);
+      ctx.fill();
 
       // Draw subtle decorative overlay ring
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -911,12 +919,28 @@ export default function App() {
       canvas.height = 128;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Draw elegant circular container background
+        ctx.clearRect(0, 0, 128, 128);
+        
+        // Draw elegant circular container background and clip for perfect circularity
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(64, 64, 62, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, 128, 128);
 
-        // Draw image keeping proportional scale centered
-        ctx.drawImage(img, 12, 12, 104, 104);
+        // Draw dynamic ring border around white circle
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(64, 64, 61.5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw image keeping proportional scale centered inside the circle
+        ctx.drawImage(img, 16, 16, 96, 96);
+        ctx.restore();
 
         canvas.toBlob((blob) => {
           if (blob) {
@@ -989,7 +1013,9 @@ export default function App() {
         description: wrapperDescription.trim() || `Companion app wrapper for ${appName}.`,
         version: wrapperVersion.trim() || '1.0.0',
         start_url: url,
-        type: 'privileged',
+        type: wrapperType,
+        fullscreen: wrapperFullscreen,
+        cursor: wrapperUseCursor,
         icons: {
           '128': '/icon128.png'
         },
@@ -997,11 +1023,13 @@ export default function App() {
           name: wrapperAuthor.trim() || 'KaiOS Web App Wrapper Builder',
           url: url
         },
-        permissions: {
-          'browser': {
-            'description': 'Required to browse other frames or resolve web redirects.'
+        ...(wrapperType === 'privileged' ? {
+          permissions: {
+            'browser': {
+              'description': 'Required to browse other frames or resolve web redirects.'
+            }
           }
-        }
+        } : {})
       };
 
       const innerZip = new JSZip();
@@ -1953,6 +1981,77 @@ export default function App() {
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 h-20 resize-none"
                       />
                     </div>
+
+                    {/* Advanced Parameters */}
+                    <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-4.5 space-y-4">
+                      <span className="text-xs font-bold text-slate-300 block uppercase tracking-wider">
+                        Power Packager Options
+                      </span>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* App Type (Web vs Privileged) */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-slate-400 block">App Permissions Integrity</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setWrapperType('web')}
+                              className={`px-3 py-2 rounded-lg text-xs font-bold border transition duration-200 cursor-pointer text-center ${
+                                wrapperType === 'web'
+                                  ? 'bg-orange-600/20 border-orange-500 text-orange-400 font-bold'
+                                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-300 hover:border-slate-800'
+                              }`}
+                            >
+                              Web App
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWrapperType('privileged')}
+                              className={`px-3 py-2 rounded-lg text-xs font-bold border transition duration-200 cursor-pointer text-center ${
+                                wrapperType === 'privileged'
+                                  ? 'bg-orange-600/20 border-orange-500 text-orange-400 font-bold'
+                                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-300 hover:border-slate-800'
+                              }`}
+                            >
+                              Privileged
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-slate-500 block leading-tight">
+                            {wrapperType === 'privileged' 
+                              ? "Privileged: Best for general wrapping, allows advanced redirect routing permissions."
+                              : "Web: Highly lightweight standard sandboxed environment level."}
+                          </span>
+                        </div>
+
+                        {/* Layout Toggles */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-slate-400 block">System Screen Options</label>
+                          <div className="space-y-2">
+                            {/* Fullscreen Toggle */}
+                            <label className="flex items-center justify-between p-2.5 bg-slate-950/60 hover:bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-lg cursor-pointer transition select-none">
+                              <span className="text-xs font-medium text-slate-300">Fullscreen Integration</span>
+                              <input
+                                type="checkbox"
+                                checked={wrapperFullscreen}
+                                onChange={(e) => setWrapperFullscreen(e.target.checked)}
+                                className="w-4 h-4 accent-orange-600 rounded bg-slate-900 border-slate-850 cursor-pointer"
+                              />
+                            </label>
+
+                            {/* Cursor Toggle */}
+                            <label className="flex items-center justify-between p-2.5 bg-slate-950/60 hover:bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-lg cursor-pointer transition select-none">
+                              <span className="text-xs font-medium text-slate-300">Virtual Cursor</span>
+                              <input
+                                type="checkbox"
+                                checked={wrapperUseCursor}
+                                onChange={(e) => setWrapperUseCursor(e.target.checked)}
+                                className="w-4 h-4 accent-orange-600 rounded bg-slate-900 border-slate-850 cursor-pointer"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Right Column App Icon Live Rendering & Actions (4 cols) */}
@@ -1962,12 +2061,12 @@ export default function App() {
                     </span>
 
                     {/* Launcher Icon Display */}
-                    <div className="relative w-28 h-28 flex items-center justify-center rounded-2xl bg-slate-900 border border-slate-800 shadow-xl overflow-hidden group">
+                    <div className="relative w-28 h-28 flex items-center justify-center rounded-full bg-slate-900 border border-slate-800 shadow-xl overflow-hidden group">
                       {wrapperGeneratedIconUrl ? (
                         <img
                           src={wrapperGeneratedIconUrl}
                           alt="Launcher icon preview"
-                          className="w-full h-full object-cover rounded-2xl p-1"
+                          className="w-full h-full object-cover rounded-full p-1"
                         />
                       ) : (
                         <div className="text-center p-3">
@@ -2016,7 +2115,9 @@ export default function App() {
                     <div className="w-full bg-slate-950/80 border border-slate-900 rounded-lg p-3 text-[11px] text-slate-400 space-y-1 font-mono">
                       <div className="text-slate-500 font-bold uppercase text-[9px] mb-1">Package Specs:</div>
                       <div className="truncate">Url: <span className="text-slate-300">{wrapperUrl || 'None'}</span></div>
-                      <div>Type: <span className="text-blue-400 font-semibold">Web Wrapper</span></div>
+                      <div>Type: <span className="text-indigo-400 font-semibold uppercase">{wrapperType}</span></div>
+                      <div>Fullscreen: <span className={wrapperFullscreen ? "text-emerald-400 font-semibold" : "text-slate-500"}>{wrapperFullscreen ? "Enabled" : "Disabled"}</span></div>
+                      <div>Cursor: <span className={wrapperUseCursor ? "text-emerald-400 font-semibold" : "text-slate-500"}>{wrapperUseCursor ? "Enabled" : "Disabled"}</span></div>
                       <div>Format: <span className="text-purple-400 font-semibold">OmniSD Package</span></div>
                     </div>
                   </div>
